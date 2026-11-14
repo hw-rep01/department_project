@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.config import get_settings
@@ -15,6 +15,10 @@ class RequestBatch(Base):
     """بطاقة موحدة تجمع طلبات متشابهة دلالياً وتُلخَّص بصياغة رسمية."""
 
     __tablename__ = "request_batches"
+    __table_args__ = (
+        # نطاق الدمج: بحث البطاقات المفتوحة حسب الشعبة/الفئة/(المادة) والمرحلة والحالة
+        Index("ix_request_batches_dedup_scope", "section_id", "category", "course_id", "current_stage", "status"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     section_id: Mapped[int] = mapped_column(ForeignKey("sections.id", ondelete="CASCADE"), index=True)
@@ -41,6 +45,11 @@ class StudentRequest(Base):
     """الطلب أو الشكوى الموحدة التي يكتبها الطالب."""
 
     __tablename__ = "student_requests"
+    __table_args__ = (
+        # طلبات الشعبة المفتوحة المنفردة المرشّحة للدمج، والترتيب الزمني المعتاد في القوائم
+        Index("ix_student_requests_rep_queue", "section_id", "current_stage", "status", "batch_id"),
+        Index("ix_student_requests_section_created", "section_id", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)

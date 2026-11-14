@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.config import get_settings
@@ -15,6 +15,10 @@ class TopicCluster(Base):
     """مجموعة من الأسئلة/الأخطاء المتشابهة دلالياً ضمن مادة وشعبة في فصل معين. تُعاد حسابها في كل تشغيل."""
 
     __tablename__ = "topic_clusters"
+    __table_args__ = (
+        # الرادار يحذف ويعيد بناء العناقيد بهذا النطاق في كل تشغيل
+        Index("ix_topic_clusters_scope", "course_id", "section_id", "semester_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), index=True)
@@ -53,6 +57,10 @@ class GapAlert(Base):
     """
 
     __tablename__ = "gap_alerts"
+    __table_args__ = (
+        # استعلام التنبيهات المفتوحة عند الدمج يكون دائماً بهذه المفاتيح الأربعة
+        Index("ix_gap_alerts_open_lookup", "course_id", "section_id", "semester_id", "instructor_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     course_id: Mapped[int] = mapped_column(ForeignKey("courses.id", ondelete="CASCADE"), index=True)

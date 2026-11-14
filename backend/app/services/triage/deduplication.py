@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import RequestBatch, RequestCategory, RequestStatus, RoutingStage, StudentRequest
-from app.services.common.vector_math import cosine_similarity, to_matrix
+from app.services.common.vector_math import best_match, to_matrix
 from app.services.gaps.clustering import centroid_of, cluster_embeddings
 from app.services.triage.events import record_event
 from app.services.triage.summarizer import summarize_batch
@@ -118,21 +118,24 @@ def attach_on_submit(db: Session, request: StudentRequest, actor_user_id: int | 
     threshold = get_settings().request_dedup_similarity
     course_id = request.course_id if request.category == RequestCategory.ACADEMIC else None
 
-    # 1) إلحاق بالبطاقة القائمة الأقرب
+    # 1) إلحاق بالبطاقة القائمة الأقرب (تشابه كل المراكز بضربة مصفوفة واحدة)
+    open_batches = [
+        batch
+        for batch in db.scalars(
+            select(RequestBatch).where(
+                *_scope_conditions(RequestBatch, request.section_id, request.category, course_id),
+                *_open_conditions(RequestBatch),
+            )
+        ).all()
+        if batch.centroid is not None
+    ]
     best_batch: RequestBatch | None = None
-    best_score = threshold
-    open_batches = db.scalars(
-        select(RequestBatch).where(
-            *_scope_conditions(RequestBatch, request.section_id, request.category, course_id),
-            *_open_conditions(RequestBatch),
+    if open_batches:
+        position = best_match(
+            request.embedding, [batch.centroid for batch in open_batches], threshold
         )
-    ).all()
-    for batch in open_batches:
-        if batch.centroid is None:
-            continue
-        score = cosine_similarity(batch.centroid, request.embedding)
-        if score >= best_score:
-            best_batch, best_score = batch, score
+        if position is not None:
+            best_batch = open_batches[position]
 
     if best_batch is not None:
         request.batch_id = best_batch.id
@@ -147,18 +150,23 @@ def attach_on_submit(db: Session, request: StudentRequest, actor_user_id: int | 
             to_stage=REP,
         )
         db.flush()
-        members = _members(db, best_batch.id)
-        best_batch.request_count = len(members)
-        best_batch.centroid = _batch_centroid([m.embedding for m in members if m.embedding is not None])
+        # استرجاع النصوص والمراكز لبقية الأعضاء في استعلام واحد بدل تحميل الكائنات واحداً واحداً
+        rows = db.execute(
+            select(StudentRequest.subject, StudentRequest.body, StudentRequest.embedding)
+            .where(StudentRequest.batch_id == best_batch.id)
+            .order_by(StudentRequest.id)
+        ).all()
+        best_batch.request_count = len(rows)
+        best_batch.centroid = _batch_centroid([row.embedding for row in rows if row.embedding is not None])
         return best_batch.id
 
-    # 2) تكوين بطاقة جديدة مع طلب منفرد متشابه
+    # 2) تكوين بطاقة جديدة مع طلب منفرد متشابه (أقرب مرشح بضربة مصفوفة واحدة)
+    peers = _loose_candidates(db, request.section_id, request.category, course_id, exclude_id=request.id)
     best_peer: StudentRequest | None = None
-    best_score = threshold
-    for peer in _loose_candidates(db, request.section_id, request.category, course_id, exclude_id=request.id):
-        score = cosine_similarity(peer.embedding, request.embedding)
-        if score >= best_score:
-            best_peer, best_score = peer, score
+    if peers:
+        position = best_match(request.embedding, [peer.embedding for peer in peers], threshold)
+        if position is not None:
+            best_peer = peers[position]
 
     if best_peer is None:
         return None
