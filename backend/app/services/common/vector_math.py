@@ -25,3 +25,29 @@ def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
     if denominator == 0.0:
         return 0.0
     return float(np.dot(va, vb) / denominator)
+
+
+def _unit(vec: Sequence[float]) -> np.ndarray:
+    v = np.asarray(vec, dtype=np.float32).ravel()
+    norm = float(np.linalg.norm(v))
+    return v / norm if norm > 0 else v
+
+
+def cosine_similarities(query: Sequence[float], matrix: np.ndarray) -> np.ndarray:
+    """متجه تشابه جيب التمام بين استعلام واحد وكل صفوف مصفوفة، محسوب بضربة مصفوفة واحدة."""
+    if matrix.size == 0:
+        return np.zeros(0, dtype=np.float32)
+    return normalize_rows(matrix) @ _unit(query)
+
+
+def best_match(
+    query: Sequence[float],
+    candidates: Sequence[Sequence[float]],
+    min_score: float,
+) -> int | None:
+    """فهرس أعلى مرشح تشابهه >= min_score، أو None. يعيد None عند قائمة فارغة."""
+    if not len(candidates):
+        return None
+    scores = cosine_similarities(query, to_matrix(candidates))
+    position = int(np.argmax(scores))
+    return position if float(scores[position]) >= min_score else None

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -31,6 +31,10 @@ class Department(Base):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        # عدّ طلاب الشعبة النشطين في الرادار، وجلب أعضاء الشعبة حسب الدور في الإشعارات والتصفية
+        Index("ix_users_section_role_active", "section_id", "role", "is_active"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     full_name: Mapped[str] = mapped_column(String(255))

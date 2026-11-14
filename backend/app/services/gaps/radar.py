@@ -27,7 +27,7 @@ from app.models import (
     User,
     UserRole,
 )
-from app.services.common.vector_math import cosine_similarity, normalize_rows, to_matrix
+from app.services.common.vector_math import best_match, normalize_rows, to_matrix
 from app.services.errors import NotFoundError
 from app.services.gaps.clustering import centroid_of, cluster_embeddings, most_central_index
 
@@ -147,23 +147,25 @@ def _upsert_gap_alert(
     وإلا ينشئ تنبيهاً جديداً ويرسل إشعاراً للدكتور.
     """
     settings = get_settings()
-    open_alerts = db.scalars(
-        select(GapAlert).where(
-            GapAlert.course_id == course_id,
-            GapAlert.section_id == section_id,
-            GapAlert.semester_id == semester_id,
-            GapAlert.instructor_id == instructor_id,
-            GapAlert.status != GapAlertStatus.RESOLVED,
-            GapAlert.centroid.is_not(None),
-        )
-    ).all()
+    open_alerts = list(
+        db.scalars(
+            select(GapAlert).where(
+                GapAlert.course_id == course_id,
+                GapAlert.section_id == section_id,
+                GapAlert.semester_id == semester_id,
+                GapAlert.instructor_id == instructor_id,
+                GapAlert.status != GapAlertStatus.RESOLVED,
+                GapAlert.centroid.is_not(None),
+            )
+        ).all()
+    )
 
+    # تشابه كل المراكز مع المركز الجديد في ضربة مصفوفة واحدة بدل حلقة بايثون
     best: GapAlert | None = None
-    best_similarity = settings.gap_alert_merge_similarity
-    for alert in open_alerts:
-        similarity = cosine_similarity(alert.centroid, centroid)
-        if similarity >= best_similarity:
-            best, best_similarity = alert, similarity
+    if open_alerts:
+        position = best_match(centroid, [alert.centroid for alert in open_alerts], settings.gap_alert_merge_similarity)
+        if position is not None:
+            best = open_alerts[position]
 
     summary = build_alert_summary(label, distinct, total, ratio)
 

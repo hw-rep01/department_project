@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.config import get_settings
@@ -15,6 +15,10 @@ class StudentQuestion(Base):
     """كل سؤال يطرحه الطالب على المساعد الذكي، مع تضمينه لاستخدامه في تجميع المواضيع."""
 
     __tablename__ = "student_questions"
+    __table_args__ = (
+        # الرادار يجمع أسئلة النطاق (مادة + شعبة + زمن) ذات التضمين
+        Index("ix_student_questions_radar_scope", "course_id", "section_id", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -71,7 +75,11 @@ class QuizQuestion(Base):
 
 class QuizAttempt(Base):
     __tablename__ = "quiz_attempts"
-    __table_args__ = (UniqueConstraint("quiz_id", "student_id", name="uq_one_attempt_per_student"),)
+    __table_args__ = (
+        UniqueConstraint("quiz_id", "student_id", name="uq_one_attempt_per_student"),
+        # الرادار يفلتر محاولات الفصل ضمن مدى زمني
+        Index("ix_quiz_attempts_submitted", "submitted_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id", ondelete="CASCADE"), index=True)
